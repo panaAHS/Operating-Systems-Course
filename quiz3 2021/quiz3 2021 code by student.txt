@@ -1,0 +1,36 @@
+void minmaxAllListsFork(int **numbers, int nList, int *nElem){
+    int pid;
+    int minmax[2];
+    int status;
+    int min = INT_MAX;  
+    int max = INT_MIN;
+    minmax[0] = min;
+    minmax[1] = max;
+    char Str[10]; 
+
+    
+    
+    for(int i = 0 ; i < nList; i++){ 
+ 
+        pid = fork();
+        wait(&status);
+        if (pid == 0){
+            
+            for(int j = 0 ; j < nElem[i]; j++){
+                 if (numbers[i][j] >= minmax[1] ){
+                    minmax[1] = numbers[i][j];
+                }
+                else if (numbers[i][j] <= minmax[0] ){
+                    minmax[0] = numbers[i][j];
+                }
+                sprintf(Str,"minmax-%d",i);
+                writeBinary(Str, minmax);
+                
+            }
+            exit(0);
+        }
+ 
+    }
+    return;
+       
+}

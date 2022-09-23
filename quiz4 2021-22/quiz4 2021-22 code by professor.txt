@@ -1,0 +1,54 @@
+void runcmd(struct cmd *cmd)
+{
+  int p[2], r;
+  struct execcmd *ecmd;
+  struct pipecmd *pcmd;
+  struct redircmd *rcmd;
+
+  if(cmd == 0)
+    _exit(0);
+
+  switch(cmd->type){
+  default:
+    fprintf(stderr, "unknown runcmd\n");
+    _exit(-1);
+
+  case ' ':
+    ecmd = (struct execcmd*)cmd;
+    if(ecmd->argv[0] == 0)
+      _exit(0);
+    execvp(ecmd->argv[0], ecmd->argv);
+    fprintf(stderr, "execvp failed\n");
+    break;
+
+  case '>':
+  case '<':
+    rcmd = (struct redircmd*)cmd;
+    int redirection_fd = open(rcmd->file, rcmd->flags, S_IRWXU);
+    dup2(redirection_fd, rcmd->fd);
+    runcmd(rcmd->cmd);
+    break;
+
+  case '|':
+    pcmd = (struct pipecmd*)cmd;
+    pipe(p);
+    if (fork1() == 0) {  // child1 executes pcmd->left
+      close(p[0]);
+      dup2(p[1], STDOUT_FILENO);
+      close(p[1]);
+      runcmd(pcmd->left);
+    }
+    if (fork1() == 0) { // child2 executes pcmd->right
+      close(p[1]);
+      dup2(p[0], STDIN_FILENO);
+      close(p[0]);
+      runcmd(pcmd->right);
+    }
+    close(p[0]);
+    close(p[1]);
+    wait(&r);
+    wait(&r);
+    break;
+  }
+  _exit(0);
+}

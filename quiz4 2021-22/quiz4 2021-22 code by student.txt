@@ -1,0 +1,65 @@
+void runcmd(struct cmd *cmd)
+{
+  struct execcmd *ecmd;
+  struct pipecmd *pcmd;
+  struct redircmd *rcmd;
+  int p[2];
+
+  if(cmd == 0)
+    _exit(0);
+
+  pipe(p);
+  
+  switch(cmd->type)
+  {
+  default:
+    //fprintf(stderr, "unknown runcmd\n");
+    _exit(-1);
+
+  case ' ':
+    ecmd = (struct execcmd*)cmd;
+    if(ecmd->argv[0] == 0)
+      _exit(0);
+    //fprintf(stderr, "exec not implemented\n");
+    execvp(ecmd->argv[0], ecmd->argv);
+    break;
+
+  case '>':
+  case '<':
+    rcmd = (struct redircmd*)cmd;
+    //fprintf(stderr, "redir not implemented\n");
+    close(rcmd->fd);
+    
+    if(open(rcmd->file, rcmd->flags, S_IRWXU) < 0)
+      exit(1);
+      
+    runcmd(rcmd->cmd);
+    break;
+
+  case '|':
+    pcmd = (struct pipecmd*)cmd;
+    //fprintf(stderr, "pipe %d not implemented\n", pcmd->type);
+    if(fork1() == 0)
+    {
+      close(1);
+      dup(p[1]);
+      close(p[0]);
+      close(p[1]);
+      runcmd(pcmd->left);
+    }
+    if(fork1() == 0)
+    {
+      close(0);
+      dup(p[0]);
+      close(p[0]);
+      close(p[1]);
+      runcmd(pcmd->right);
+    }
+    close(p[0]);
+    close(p[1]);
+    wait(NULL);
+    wait(NULL);
+    break;
+  }
+  _exit(0);
+}

@@ -1,0 +1,341 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <stdint.h>
+
+#define MaxBufferSize 200
+#define Maxlength 65535
+
+/**
+ * Each memory segment (block) is represented by a memorySegment structure object.
+ */
+typedef struct memorySegment {
+    uint16_t startAddress;
+    uint16_t length;
+    bool occupied;
+    struct memorySegment *next;
+} memorySegment;
+
+/**
+ * Functions for the actual handling of the memory segments. You need to implement these!
+ */
+void printList(memorySegment *memList);
+void insertListItemAfter(memorySegment *current);
+void removeListItemAfter(memorySegment *current);
+memorySegment *initializeMemory();
+
+memorySegment *assignFirst(memorySegment *memList, uint16_t requestedMem);
+memorySegment *assignBest(memorySegment *memList, uint16_t requestedMem);
+memorySegment *assignNext(memorySegment *memList, uint16_t requestedMem);
+void reclaim(memorySegment *memList, memorySegment *thisOne);
+
+memorySegment *assignFirstDyn(memorySegment *memList, uint16_t requestedMem);
+memorySegment *assignBestDyn(memorySegment *memList, uint16_t requestedMem);
+memorySegment *assignNextDyn(memorySegment *memList, uint16_t requestedMem);
+void reclaimDyn(memorySegment *memList, memorySegment *thisOne);
+
+
+
+void parseMessage(char *buffer, size_t size);
+void execute(char *token, memorySegment *(*assignMemory)(memorySegment *mem, uint16_t size),
+             void (*reclaimMemory)(memorySegment *mem, memorySegment *thisOne),
+             memorySegment *memList, char *savePointer1, char *savePointer2);
+
+memorySegment *initializeStaticMemory(int memorySize, int blockSize);
+memorySegment *initializeDynamicMemory(int memorySize);
+
+int main() {
+    char buff[MaxBufferSize];
+    parseMessage(buff, sizeof(buff));
+}
+
+void parseMessage(char *buffer, size_t size) {
+    /* read the string from the stdin and check for error */
+    if (fgets(buffer, size, stdin) == NULL) {
+        printf("Error reading stdint.");
+        exit(1);
+    }
+
+    /* pointer to the memory, which is represented by a linked list */
+    memorySegment *memList;
+
+    /* declare the delimiter, so that the string is divided in separate tokens */
+    const char delimiter[2] = " ";
+
+    /* used to specify on which string, the strtok_r performs */
+    char *savePointer1 = NULL;
+    char *savePointer2 = NULL;
+    char *savePointer3 = NULL;
+    char *savePointer4 = NULL;
+
+    /* reading of the string's header with the necessary information about the test */
+    char *sizeOfMemory = strtok_r(buffer, delimiter, &savePointer1);
+    char *typeOfMemory = strtok_r(NULL, delimiter, &savePointer1);
+    char *assignMethod = strtok_r(NULL, delimiter, &savePointer1);
+
+    /* array of pointers to the appropriate memory management methods */
+    memorySegment *(*methodOfAssignement) (memorySegment *memList, uint16_t requestedMem);
+    void (*methodOfReclaim) (memorySegment *memList, memorySegment* thisOne);
+
+    if (typeOfMemory[0] == 'S') {
+        if (strcmp(assignMethod, "AF") == 0) {
+            methodOfAssignement = assignFirst;
+        } else if (strcmp(assignMethod, "AB") == 0) {
+            methodOfAssignement = assignBest;
+        } else if (strcmp(assignMethod, "AN") == 0) {
+            methodOfAssignement = assignNext;
+        } else {
+            printf("Unknown memory assignement method.");
+            exit(1);
+        }
+        methodOfReclaim = reclaim;
+        char *blockSize = strtok_r(typeOfMemory, "S", &savePointer2);
+        memList = initializeStaticMemory(atoi(sizeOfMemory), atoi(blockSize));
+    } else if (typeOfMemory[0] == 'D') {
+        if (strcmp(assignMethod, "AF") == 0) {
+            methodOfAssignement = assignFirstDyn;
+        } else if (strcmp(assignMethod, "AB") == 0) {
+            methodOfAssignement = assignBestDyn;
+        } else if (strcmp(assignMethod, "AN") == 0) {
+            methodOfAssignement = assignNextDyn;
+        } else {
+            printf("Unknown memory assignement method.");
+            exit(1);
+        }
+        methodOfReclaim = reclaimDyn;
+        memList = initializeDynamicMemory(atoi(sizeOfMemory));
+    } else {
+        printf("Invalid memory type.");
+        exit(1);
+    }
+
+    char *token = strtok_r(NULL, delimiter, &savePointer1);
+
+    while (true) {
+        token = strtok_r(NULL, delimiter, &savePointer1);
+        if (token == NULL) {
+            break;
+        }
+        execute(token, (*methodOfAssignement), methodOfReclaim, memList, savePointer3, savePointer4);
+    }
+    printList(memList);
+
+}
+
+void execute(char *token, memorySegment *(*assignMemory)(memorySegment *mem, uint16_t size),
+             void (*reclaimMemory)(memorySegment *mem, memorySegment *thisOne),
+             memorySegment *memList, char *savePointer1, char *savePointer2) {
+    if (token[0] == 'A') {
+            char *requestedMemory = strtok_r(token, "A", &savePointer1);
+            (*assignMemory)(memList, atoi(requestedMemory));
+    } else if (token[0] == 'R') {
+        int indexOfBlockToReclaim = atoi(strtok_r(token, "R", &savePointer2));
+        memorySegment *blockToReclaim = memList;
+        if (indexOfBlockToReclaim <= 0) {   // 1-based, first block is block-1
+            exit(1);
+        }
+        if (indexOfBlockToReclaim > 1) {
+            while (indexOfBlockToReclaim > 1) {
+                blockToReclaim = blockToReclaim->next;
+                indexOfBlockToReclaim--;
+            }
+        }
+        (*reclaimMemory)(memList, blockToReclaim);
+    }
+}
+
+
+memorySegment *initializeStaticMemory(int memorySize, int blockSize) {
+    int numberOfBlocks = memorySize / blockSize;
+    int remainderSize = memorySize % blockSize;
+
+    memorySegment *firstBlock = (memorySegment *)malloc(sizeof(memorySegment));
+    firstBlock->occupied = false;
+    firstBlock->length = blockSize;
+    firstBlock->startAddress = 0;
+
+    memorySegment *previousSegment = firstBlock;
+
+    for (int i = 0; i < numberOfBlocks-1; i++) {
+        memorySegment *nextMemorySegment = (memorySegment *)malloc(sizeof(memorySegment));
+        nextMemorySegment->occupied = false;
+        nextMemorySegment->startAddress = previousSegment->startAddress + blockSize;
+        nextMemorySegment->length = blockSize;
+        previousSegment->next = nextMemorySegment;
+        previousSegment = nextMemorySegment;
+    }
+    if (remainderSize > 0) {
+        memorySegment *lastMemorySegment = (memorySegment *)malloc(sizeof(memorySegment));
+        lastMemorySegment->length = remainderSize;
+        lastMemorySegment->occupied = false;
+        lastMemorySegment->startAddress = previousSegment->startAddress + blockSize;
+        previousSegment->next = lastMemorySegment;
+    }
+    return firstBlock;
+}
+
+memorySegment *initializeDynamicMemory(int memorySize) {
+    memorySegment *memory = (memorySegment *)malloc(sizeof(memorySegment));
+    memory->startAddress = 0;
+    memory->length = memorySize;
+    memory->occupied = false;
+    return memory;
+}
+ 
+ void printList(memorySegment * memList) {
+
+  memorySegment * current = memList;
+
+  while(current) {      
+ 	 printf("%d %d %s\n", current->startAddress, current->length, current->occupied ? "Occupied!" : "Free");
+ 	 current = current->next;
+  }
+}
+
+void insertListItemAfter(memorySegment *current) {
+    memorySegment *newItem;
+    newItem = (memorySegment *)malloc(sizeof(memorySegment));
+
+
+    if(current) {
+      newItem->next = current->next;
+      current->next = newItem;
+    } 
+    
+    else{
+      return;
+    }
+ }
+
+void removeListItemAfter(memorySegment * current) {
+ 	memorySegment *newNext;
+ 	
+    if(current && current->next) {
+      newNext = current->next->next;
+      free(current->next);
+      current->next = newNext;
+    } 
+}
+
+memorySegment *assignFirst(memorySegment *memList, uint16_t requestedMem) {
+ 	memorySegment *current = memList;
+ 	
+ 	while(current) {
+ 		if(current->occupied == false && current->length >= requestedMem) {
+ 			current->occupied = true;
+ 			return current;
+ 		}
+ 		current = current->next;
+ 	}
+
+	return (NULL);
+}
+
+memorySegment *assignBest(memorySegment *memList, uint16_t requestedMem) {
+ 	memorySegment *current = memList;
+ 	memorySegment *best_fit = (memorySegment *)malloc(sizeof(memorySegment));
+
+ 	best_fit->length = Maxlength;
+ 	
+ 	while(current) {
+ 		if(current->occupied == false && current->length >= requestedMem)
+ 			if(current->length < best_fit->length)
+ 				best_fit = current;
+        current = current->next;
+    }
+
+ 	if(best_fit->length != Maxlength) {
+ 		best_fit->occupied = true;
+ 		return best_fit;
+ 	} else
+	 	return (NULL);
+}
+
+memorySegment *assignNext(memorySegment *memList, uint16_t requestedMem) {
+ 	static memorySegment *current;
+ 	if(current==NULL)
+ 		current = memList;
+
+ 	while(current) {
+ 		if(current->occupied == false && current->length >= requestedMem) {
+ 			current->occupied = true;
+ 			return current;
+ 		}
+ 		current = current->next;
+ 	}
+
+	return (NULL);
+}
+
+void reclaim(memorySegment *memList, memorySegment *thisOne) {
+	thisOne->occupied = false;
+}
+
+memorySegment *assignFirstDyn(memorySegment *memList, uint16_t requestedMem) {
+	memorySegment *new_assigned = assignFirst(memList, requestedMem);
+
+	if(new_assigned && requestedMem != new_assigned->length) { 
+		insertListItemAfter(new_assigned);
+		new_assigned->next->startAddress = new_assigned->startAddress + requestedMem;
+		new_assigned->next->length = new_assigned->length - requestedMem;
+		new_assigned->next->occupied = false;
+		new_assigned->length = requestedMem;
+
+		if(new_assigned->next->next) 
+            if(new_assigned->next->next->occupied == false) { 
+                new_assigned->next->length += new_assigned->next->next->length;
+                removeListItemAfter(new_assigned->next);	
+            }
+	}
+	return new_assigned;
+}
+
+memorySegment *assignBestDyn(memorySegment *memList, uint16_t requestedMem) {
+	memorySegment *new_assigned = assignBest(memList, requestedMem);
+
+	if(new_assigned && requestedMem != new_assigned->length) {
+		insertListItemAfter(new_assigned);
+		new_assigned->next->startAddress = new_assigned->startAddress + requestedMem;
+		new_assigned->next->length = new_assigned->length - requestedMem;
+		new_assigned->next->occupied = false;
+		new_assigned->length = requestedMem;
+
+        if(new_assigned->next->next)
+            if(new_assigned->next->next->occupied == false) { 
+                new_assigned->next->length += new_assigned->next->next->length;
+                removeListItemAfter(new_assigned->next);	
+            }
+	}
+	return new_assigned;
+}
+
+memorySegment *assignNextDyn(memorySegment *memList, uint16_t requestedMem) {
+	memorySegment *new_assigned = assignNext(memList, requestedMem);
+
+	if(new_assigned && requestedMem != new_assigned->length) { 
+		insertListItemAfter(new_assigned);
+		new_assigned->next->startAddress = new_assigned->startAddress + requestedMem;
+		new_assigned->next->length = new_assigned->length - requestedMem;
+		new_assigned->next->occupied = false;
+		new_assigned->length = requestedMem;
+
+		if(new_assigned->next->next) 
+            if(new_assigned->next->next->occupied == false) { 
+                new_assigned->next->length += new_assigned->next->next->length;
+                removeListItemAfter(new_assigned->next);	
+            }
+	}
+	return new_assigned;
+}
+
+void reclaimDyn(memorySegment *memList, memorySegment *thisOne) {
+	reclaim(memList, thisOne);
+	
+	if(thisOne->next->occupied == false) {
+		thisOne->length += thisOne->next->length;
+		removeListItemAfter(thisOne);
+	}
+}
+
+
